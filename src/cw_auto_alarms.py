@@ -1,5 +1,5 @@
 import logging
-
+import boto3
 from actions import check_alarm_tag, process_alarm_tags, delete_alarms, process_lambda_alarms, \
     scan_and_process_alarm_tags, process_rds_alarms, separate_wildcard_alarms
 from os import getenv
@@ -174,11 +174,26 @@ def lambda_handler(event, context):
         }
     }
     logger.info('event received: {}'.format(event))
+    logger.info('attempting to assume role in account: {}'.format(event['account']))
+    creds = None
+    try:
+        role_to_assume = getenv('ROLE_TO_ASSUME', None)
+        if role_to_assume:
+            sts_client = boto3.client('sts')
+            assumed_role_object = sts_client.assume_role(
+                RoleArn=f"arn:aws:iam::{event['account']}:role/{role_to_assume}",
+                RoleSessionName="AssumeRoleSession"
+            )
+            creds = assumed_role_object['Credentials']
+            logger.info('successfully assumed role in account: {}'.format(event['account']))
+    except Exception as e:
+        logger.error('Failed to assume role in {}: {}'.format(event['account'], e))
+
     try:
         if 'source' in event and event['source'] == 'aws.ec2' and event['detail']['state'] == 'running':
             instance_id = event['detail']['instance-id']
             # determine if instance is tagged to create an alarm
-            instance_info = check_alarm_tag(instance_id, create_alarm_tag)
+            instance_info = check_alarm_tag(instance_id, create_alarm_tag, creds)
 
             # instance has been tagged for alarming, confirm an alarm doesn't already exist
             if instance_info:
@@ -251,7 +266,7 @@ def lambda_handler(event, context):
                 f'Scanning for EC2 instances with tag: {create_alarm_tag} to create alarm'
             )
             scan_and_process_alarm_tags(create_alarm_tag, default_alarms, metric_dimensions_map, sns_topic_arn,
-                                        cw_namespace, create_default_alarms_flag, alarm_separator, alarm_identifier)
+                                        cw_namespace, create_default_alarms_flag, alarm_separator, alarm_identifier, creds)
 
     except Exception as e:
         # If any other exceptions which we didn't expect are raised
