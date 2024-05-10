@@ -42,9 +42,9 @@ def boto3_client(resource, assumed_credentials=None):
     return client
 
 
-def check_alarm_tag(instance_id, tag_key):
+def check_alarm_tag(instance_id, tag_key, assumed_credentials):
     try:
-        ec2_client = boto3_client('ec2')
+        ec2_client = boto3_client('ec2', assumed_credentials)
         # does instance have appropriate alarm tag?
         instance = ec2_client.describe_instances(
             Filters=[
@@ -85,9 +85,9 @@ def check_alarm_tag(instance_id, tag_key):
         raise
 
 
-def get_tags_for_rds_instance(db_instance_arn):
+def get_tags_for_rds_instance(db_instance_arn, assumed_credentials):
     try:
-        rds_client = boto3_client('rds')
+        rds_client = boto3_client('rds', assumed_credentials)
         response = rds_client.list_tags_for_resource(
             ResourceName=db_instance_arn,
         )
@@ -630,7 +630,7 @@ def delete_alarms(name, alarm_identifier, alarm_separator):
 
 
 def scan_and_process_alarm_tags(create_alarm_tag, default_alarms, metric_dimensions_map, sns_topic_arn,
-                                cw_namespace, create_default_alarms_flag, alarm_separator, alarm_identifier):
+                                cw_namespace, create_default_alarms_flag, alarm_separator, alarm_identifier, assumed_credentials):
     try:
         ec2_client = boto3_client('ec2')
         default_filtered_alarms, wildcard_alarms = separate_wildcard_alarms(alarm_separator, cw_namespace,
@@ -640,7 +640,7 @@ def scan_and_process_alarm_tags(create_alarm_tag, default_alarms, metric_dimensi
                 # Look for running instances only
                 if instance["State"]["Code"] > 16:
                     continue
-                if check_alarm_tag(instance["InstanceId"], create_alarm_tag):
+                if check_alarm_tag(instance["InstanceId"], create_alarm_tag, assumed_credentials):
                     process_alarm_tags(instance["InstanceId"], instance, default_filtered_alarms, wildcard_alarms,
                                        metric_dimensions_map,
                                        sns_topic_arn, cw_namespace, create_default_alarms_flag, alarm_separator,
